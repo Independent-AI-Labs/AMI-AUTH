@@ -1,0 +1,25 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff-format
+        entry: uv run ruff format --config ruff.toml
+        language: system
+        types: [python]
+      - id: ruff
+        name: ruff
+        entry: uv run ruff check --config ruff.toml --fix --exit-non-zero-on-fix
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: uv run python -m mypy --config-file mypy.toml ami
+        language: system
+        pass_filenames: false
+        files: \.py$
+        exclude: ^tests/
+      - id: check-init-files
+        name: Forbid Logic in __init__.py
+        entry: "bash -c 'for f in $(find ami/ -name \"__init__.py\"); do if [ -s \"$f\" ]; then echo \"ERROR: $f must be empty\"; exit 1; fi; done'"
+        language: system
+        files: __init__\.py$

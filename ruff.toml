@@ -1,0 +1,11 @@
+exclude = ["__pycache__", "*.egg-info", ".venv", ".git", "node_modules", ".pytest_cache"]
+line-length = 88
+target-version = "py311"
+
+[lint]
+select = [
+    "E", "F", "W", "I", "C", "B", "PL", "PT", "SIM", "UP", "RUF", "TRY", "FLY", "PERF", "FURB", "PYI", "TID", "PLC0415"
+]
+
+[lint.per-file-ignores]
+"tests/**/*.py" = ["PLR2004", "PLC0415"]

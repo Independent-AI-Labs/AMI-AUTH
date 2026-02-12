@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Node (TypeScript client)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Alembic auto-generated
+ami/db/migrations/versions/*.py
+
+# Secrets
+.env
+.env.*
+!.env.example

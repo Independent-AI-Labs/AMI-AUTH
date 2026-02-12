@@ -1,0 +1,27 @@
+{
+  "name": "@ami/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./adapter": "./src/adapter.ts",
+    "./client": "./src/client.ts",
+    "./middleware": "./src/middleware.ts",
+    "./server": "./src/server.ts",
+    "./env": "./src/env.ts",
+    "./types": "./src/types.ts",
+    "./dataops-client": "./src/dataops-client.ts"
+  },
+  "peerDependencies": {
+    "next": "15.5.4",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.6.0",
+    "typescript": "5.9.3"
+  }
+}

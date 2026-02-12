@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools==80.10.2", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ami-auth"
+version = "0.1.0"
+description = "AMI OIDC Identity Provider"
+requires-python = "==3.11.*"
+dependencies = [
+    "fastapi==0.128.0",
+    "uvicorn==0.40.0",
+    "authlib>=1.4.0",
+    "sqlalchemy==2.0.46",
+    "asyncpg==0.31.0",
+    "alembic==1.16.1",
+    "pydantic[email]==2.12.5",
+    "pydantic-settings==2.12.0",
+    "pyjwt==2.11.0",
+    "bcrypt==5.0.0",
+    "argon2-cffi==25.1.0",
+    "cryptography>=44.0.0",
+    "httpx==0.28.1",
+    "loguru==0.7.3",
+    "uuid-utils==0.14.0",
+    "python-multipart>=0.0.18",
+    "setuptools==80.10.2",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.0.2",
+    "pytest-asyncio==1.3.0",
+    "pytest-cov==7.0.0",
+    "pytest-timeout==2.4.0",
+    "aiosqlite==0.21.0",
+    "mypy==1.19.1",
+    "pre-commit>=4.0.0",
+    "ruff>=0.8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ami*"]
+
+[tool.uv]
+package = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = ["integration: marks tests as integration tests"]
+norecursedirs = ["tmp", "build", "dist", "node_modules"]
+
+[tool.coverage.run]
+concurrency = ["greenlet", "thread"]
