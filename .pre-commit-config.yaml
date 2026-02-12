@@ -20,6 +20,25 @@ repos:
         exclude: ^tests/
       - id: check-init-files
         name: Forbid Logic in __init__.py
-        entry: "bash -c 'for f in $(find ami/ -name \"__init__.py\"); do if [ -s \"$f\" ]; then echo \"ERROR: $f must be empty\"; exit 1; fi; done'"
+        entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_check_init_files \"$@\"' --"
         language: system
         files: __init__\.py$
+      - id: block-sensitive-files
+        name: Block Sensitive Files
+        entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_block_sensitive_files \"$@\"' --"
+        language: system
+      - id: check-banned-words
+        name: Check Banned Words
+        entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_check_banned_words'"
+        language: system
+        pass_filenames: false
+      - id: check-file-length
+        name: Check File Length (max 512 lines)
+        entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_check_file_length'"
+        language: system
+        pass_filenames: false
+      - id: block-coauthored
+        name: Block Co-authored Commits
+        entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_block_coauthored \"$1\"' --"
+        language: system
+        stages: [commit-msg]

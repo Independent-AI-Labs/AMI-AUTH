@@ -165,7 +165,7 @@ async function initialiseAuthExports(): Promise<AuthExports> {
     )
     return createDevAuth()
   } catch (err) {
-    console.warn('[ux/auth] next-auth initialisation failed, falling back to dev auth implementation.', err)
+    console.warn('[ux/auth] next-auth initialisation failed, using dev auth implementation.', err)
     return createDevAuth()
   }
 }

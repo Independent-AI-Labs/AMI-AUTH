@@ -184,7 +184,7 @@ export class DataOpsClient {
           body: JSON.stringify(payload),
         })
       } catch (err) {
-        console.error('[ux/auth] Remote credential verification failed, falling back to local store', err)
+        console.error('[ux/auth] Remote credential verification failed, using local store', err)
       }
     }
 
@@ -210,7 +210,7 @@ export class DataOpsClient {
           return result.user
         }
       } catch (err) {
-        console.error('[ux/auth] Remote getUserByEmail failed, falling back to local store', err)
+        console.error('[ux/auth] Remote getUserByEmail failed, using local store', err)
       }
     }
 
@@ -234,7 +234,7 @@ export class DataOpsClient {
         )
         if (result.user) return result.user
       } catch (err) {
-        console.error('[ux/auth] Remote getUserById failed, falling back to local store', err)
+        console.error('[ux/auth] Remote getUserById failed, using local store', err)
       }
     }
 
