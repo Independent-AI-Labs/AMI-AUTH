@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ami.api.router_dataops import router as dataops_router
 from ami.core.settings import AuthSettings
 from ami.oidc.routes_authorize import router as authorize_router
 from ami.oidc.routes_discovery import router as discovery_router
@@ -39,7 +38,6 @@ def create_app() -> FastAPI:
             allow_headers=["Authorization", "Content-Type"],
         )
 
-    app.include_router(dataops_router)
     app.include_router(discovery_router)
     app.include_router(authorize_router)
     app.include_router(token_router)

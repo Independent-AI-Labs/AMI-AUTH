@@ -24,8 +24,10 @@ from ami.db.models_keys import SigningKeyEntity
 from ami.db.models_oauth import OAuthClientEntity
 from ami.db.models_user import UserEntity
 
+HTTP_OK = 200
+HTTP_REDIRECT = 302
+
 FERNET_KEY = Fernet.generate_key().decode()
-INTERNAL_TOKEN = "integration-test-token"
 CLIENT_ID = "integration-client"
 REDIRECT_URI = "http://localhost:3000/callback"
 VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -39,7 +41,6 @@ def _make_challenge(verifier: str) -> str:
 
 @pytest.fixture(autouse=True)
 def _flow_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("AUTH_DATAOPS_INTERNAL_TOKEN", INTERNAL_TOKEN)
     monkeypatch.setenv("AUTH_ISSUER_URL", "http://localhost:8000")
     monkeypatch.setenv("AUTH_SIGNING_KEY_ENCRYPTION_KEY", FERNET_KEY)
 
@@ -116,7 +117,7 @@ class TestFullOIDCFlow:
 
     async def test_discovery(self, flow_client: AsyncClient) -> None:
         resp = await flow_client.get("/.well-known/openid-configuration")
-        assert resp.status_code == 200
+        assert resp.status_code == HTTP_OK
         doc = resp.json()
         assert doc["issuer"] == "http://localhost:8000"
         assert "/oauth/token" in doc["token_endpoint"]
@@ -124,7 +125,7 @@ class TestFullOIDCFlow:
 
     async def test_jwks(self, flow_client: AsyncClient) -> None:
         resp = await flow_client.get("/oauth/jwks")
-        assert resp.status_code == 200
+        assert resp.status_code == HTTP_OK
         body = resp.json()
         assert len(body["keys"]) >= 1
         assert body["keys"][0]["kty"] == "RSA"
@@ -149,7 +150,7 @@ class TestFullOIDCFlow:
             },
             follow_redirects=False,
         )
-        assert resp.status_code == 302
+        assert resp.status_code == HTTP_REDIRECT
         loc = resp.headers["location"]
         parsed = urlparse(loc)
         qs = parse_qs(parsed.query)
@@ -168,7 +169,7 @@ class TestFullOIDCFlow:
                 "code_verifier": VERIFIER,
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == HTTP_OK
         tokens = resp.json()
         assert tokens["token_type"] == "Bearer"
         access_token = tokens["access_token"]
@@ -179,7 +180,7 @@ class TestFullOIDCFlow:
             "/oauth/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == HTTP_OK
         info = resp.json()
         assert info["sub"] == "flow-user-1"
         assert info["email"] == USER_EMAIL
@@ -193,7 +194,7 @@ class TestFullOIDCFlow:
                 "client_id": CLIENT_ID,
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code == HTTP_OK
         new_tokens = resp.json()
         assert new_tokens["access_token"] != access_token
         assert new_tokens["refresh_token"] != refresh_token
@@ -203,4 +204,4 @@ class TestFullOIDCFlow:
             "/oauth/revoke",
             data={"token": new_tokens["access_token"]},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == HTTP_OK

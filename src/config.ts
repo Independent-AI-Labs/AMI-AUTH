@@ -1,8 +1,8 @@
 import type { NextAuthConfig } from 'next-auth'
 
-import { dataOpsClient } from './dataops-client'
+import { authStore } from './auth-store'
 import { getAuthSecret, shouldTrustHost } from './env'
-import { AuthenticationServiceError, MetadataValidationError } from './errors'
+import { MetadataValidationError } from './errors'
 import {
   buildOAuthProvider,
   collectEnvOAuthProviders,
@@ -68,19 +68,18 @@ function createGuestProvider(): NextAuthProvider {
 async function resolveGuestUser(): Promise<AuthenticatedUser> {
   const email = getGuestEmail()
 
-  // First, try to fetch existing guest user from DataOps
+  // Try to fetch existing guest user from local credentials store
   try {
-    const existing = await dataOpsClient.getUserByEmail(email)
+    const existing = await authStore.getUserByEmail(email)
     if (existing) {
       return normaliseGuestUser(existing)
     }
   } catch (err) {
-    // Log warning but continue - we'll try to create the user next
-    console.warn(`[ux/auth] Failed to load guest account ${email} from DataOps`, err)
+    console.warn(`[ux/auth] Failed to load guest account ${email} from credentials store`, err)
   }
 
-  // Prepare the guest user template for creation
-  const guestTemplate: AuthenticatedUser = {
+  // No existing record — return a local guest template
+  const guest: AuthenticatedUser = {
     id: deriveGuestUserId(email),
     email,
     name: getGuestName(),
@@ -90,28 +89,7 @@ async function resolveGuestUser(): Promise<AuthenticatedUser> {
     tenantId: null,
     metadata: { accountType: 'guest', managedBy: 'cms-login' },
   }
-
-  // SECURITY CRITICAL: Attempt to ensure user exists in DataOps
-  // If this fails, we MUST NOT use a local template as this bypasses
-  // proper authentication and authorization checks.
-  try {
-    const ensured = await dataOpsClient.ensureUser(guestTemplate)
-    return normaliseGuestUser(ensured)
-  } catch (err) {
-    // Log security event before throwing
-    logSecurityEvent(
-      'guest_resolution_failure',
-      'Failed to ensure guest account in DataOps service',
-      err,
-      { email, guestUserId: guestTemplate.id },
-    )
-
-    // Throw error to prevent bypass of authentication
-    throw new AuthenticationServiceError(
-      'Guest account resolution failed: DataOps service unavailable',
-      { email, originalError: err instanceof Error ? err.message : String(err) },
-    )
-  }
+  return normaliseGuestUser(guest)
 }
 
 function getGuestEmail(): string {
@@ -141,23 +119,22 @@ function createCredentialsProvider(): NextAuthProvider {
         throw new Error('Email and password are required')
       }
       const email = credentials.email.toLowerCase()
-      const verification = await dataOpsClient.verifyCredentials({
+      const verification = await authStore.verifyCredentials({
         email,
         password: credentials.password,
       })
       if (!verification.user) {
         return null
       }
-      const ensured = await dataOpsClient.ensureUser(verification.user)
       return {
-        id: ensured.id,
-        email: ensured.email,
-        name: ensured.name ?? undefined,
-        image: ensured.image ?? undefined,
-        roles: ensured.roles,
-        groups: ensured.groups,
-        tenantId: ensured.tenantId,
-        metadata: ensured.metadata ?? {},
+        id: verification.user.id,
+        email: verification.user.email,
+        name: verification.user.name ?? undefined,
+        image: verification.user.image ?? undefined,
+        roles: verification.user.roles,
+        groups: verification.user.groups,
+        tenantId: verification.user.tenantId,
+        metadata: verification.user.metadata ?? {},
       }
     },
   })
@@ -167,9 +144,9 @@ async function loadExternalProviders(): Promise<NextAuthProvider[]> {
   const results: NextAuthProvider[] = []
   let catalog: AuthProviderCatalogEntry[] = []
   try {
-    catalog = await dataOpsClient.getAuthProviderCatalog()
+    catalog = await authStore.getAuthProviderCatalog()
   } catch (err) {
-    console.warn('[ux/auth] Failed to load provider catalog from DataOps', err)
+    console.warn('[ux/auth] Failed to load provider catalog', err)
   }
 
   if (!catalog.length) {

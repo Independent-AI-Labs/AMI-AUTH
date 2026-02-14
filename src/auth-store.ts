@@ -5,26 +5,24 @@ import { scryptSync, timingSafeEqual, createHash, randomUUID } from 'crypto'
 import {
   getAllowedEmails,
   getCredentialsFile,
-  getDataOpsAuthUrl,
-  getInternalToken,
   getProviderCatalogFile,
 } from './env'
 import type {
   AuthenticatedUser,
   CredentialsPayload,
-  DataOpsCredentialRecord,
+  CredentialRecord,
   AuthProviderCatalogEntry,
   VerifyCredentialsResponse,
 } from './types'
 
 const DEFAULT_SCRYPT_KEYLEN = 64
 
-class LocalCredentialsStore {
-  private cache: { mtimeMs: number; records: DataOpsCredentialRecord[] } | null = null
+class CredentialsStore {
+  private cache: { mtimeMs: number; records: CredentialRecord[] } | null = null
 
   constructor(private readonly filePath: string) {}
 
-  async load(): Promise<DataOpsCredentialRecord[]> {
+  async load(): Promise<CredentialRecord[]> {
     const abs = path.resolve(process.cwd(), this.filePath)
     const stat = await statFile(abs).catch(() => null)
     if (!stat) return []
@@ -88,9 +86,25 @@ class LocalCredentialsStore {
       metadata: entry.metadata ?? {},
     }
   }
+
+  async getUserById(id: string): Promise<AuthenticatedUser | null> {
+    const records = await this.load()
+    const match = records.find((record) => (record.id ?? deriveStableId(record.email)) === id)
+    if (!match) return null
+    return {
+      id,
+      email: match.email,
+      name: match.name ?? null,
+      image: match.image ?? null,
+      roles: match.roles ?? [],
+      groups: match.groups ?? [],
+      tenantId: match.tenantId ?? null,
+      metadata: match.metadata ?? {},
+    }
+  }
 }
 
-class LocalProviderCatalogStore {
+class ProviderCatalogStore {
   private cache: { mtimeMs: number; entries: AuthProviderCatalogEntry[] } | null = null
 
   constructor(private readonly filePath: string) {}
@@ -113,7 +127,7 @@ class LocalProviderCatalogStore {
   }
 }
 
-function deriveStableId(email: string): string {
+export function deriveStableId(email: string): string {
   const digest = createHash('sha256').update(email).digest('hex')
   return `local-${digest.slice(0, 24)}`
 }
@@ -133,177 +147,6 @@ async function verifyPassword(password: string, descriptor: string): Promise<boo
   // Default comparison
   return timingSafeEqual(Buffer.from(descriptor), Buffer.from(password))
 }
-
-async function requestJSON<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
-  })
-  if (!response.ok) {
-    const text = await response.text().catch(() => response.statusText)
-    throw new Error(`DataOps request failed: ${response.status} ${text}`)
-  }
-  return response.json() as Promise<T>
-}
-
-export class DataOpsClient {
-  private readonly baseUrl: URL | null
-  private readonly token: string | null
-  private readonly localStore: LocalCredentialsStore | null
-  private readonly localCatalog: LocalProviderCatalogStore | null
-
-  constructor() {
-    this.baseUrl = getDataOpsAuthUrl()
-    this.token = getInternalToken()
-    const credentialsFile = getCredentialsFile()
-    this.localStore = credentialsFile ? new LocalCredentialsStore(credentialsFile) : null
-    const catalogFile = getProviderCatalogFile()
-    this.localCatalog = catalogFile ? new LocalProviderCatalogStore(catalogFile) : null
-  }
-
-  private makeUrl(pathname: string): string {
-    if (!this.baseUrl) throw new Error('DATAOPS_AUTH_URL not configured')
-    const url = new URL(pathname, this.baseUrl)
-    return url.toString()
-  }
-
-  private authHeaders(): Record<string, string> {
-    if (!this.token) return {}
-    return { Authorization: `Bearer ${this.token}` }
-  }
-
-  async verifyCredentials(payload: CredentialsPayload): Promise<VerifyCredentialsResponse> {
-    if (this.baseUrl) {
-      try {
-        return await requestJSON<VerifyCredentialsResponse>(this.makeUrl('/auth/verify'), {
-          method: 'POST',
-          headers: this.authHeaders(),
-          body: JSON.stringify(payload),
-        })
-      } catch (err) {
-        console.error('[ux/auth] Remote credential verification failed, using local store', err)
-      }
-    }
-
-    if (this.localStore) {
-      return this.localStore.verifyCredentials(payload)
-    }
-
-    return { user: null, reason: 'unconfigured' }
-  }
-
-  async getUserByEmail(email: string): Promise<AuthenticatedUser | null> {
-    if (this.baseUrl) {
-      try {
-        const result = await requestJSON<{ user: AuthenticatedUser | null }>(
-          this.makeUrl(`/auth/users/by-email?email=${encodeURIComponent(email)}`),
-          {
-            method: 'GET',
-            headers: this.authHeaders(),
-            cache: 'no-store',
-          },
-        )
-        if (result.user) {
-          return result.user
-        }
-      } catch (err) {
-        console.error('[ux/auth] Remote getUserByEmail failed, using local store', err)
-      }
-    }
-
-    if (this.localStore) {
-      return this.localStore.getUserByEmail(email)
-    }
-
-    return null
-  }
-
-  async getUserById(id: string): Promise<AuthenticatedUser | null> {
-    if (this.baseUrl) {
-      try {
-        const result = await requestJSON<{ user: AuthenticatedUser | null }>(
-          this.makeUrl(`/auth/users/${encodeURIComponent(id)}`),
-          {
-            method: 'GET',
-            headers: this.authHeaders(),
-            cache: 'no-store',
-          },
-        )
-        if (result.user) return result.user
-      } catch (err) {
-        console.error('[ux/auth] Remote getUserById failed, using local store', err)
-      }
-    }
-
-    if (!this.localStore) return null
-    const records = await this.localStore.load()
-    const match = records.find((record) => (record.id ?? deriveStableId(record.email)) === id)
-    if (!match) return null
-    return {
-      id,
-      email: match.email,
-      name: match.name ?? null,
-      image: match.image ?? null,
-      roles: match.roles ?? [],
-      groups: match.groups ?? [],
-      tenantId: match.tenantId ?? null,
-      metadata: match.metadata ?? {},
-    }
-  }
-
-  async ensureUser(user: AuthenticatedUser): Promise<AuthenticatedUser> {
-    if (this.baseUrl) {
-      try {
-        const result = await requestJSON<{ user: AuthenticatedUser }>(this.makeUrl('/auth/users'), {
-          method: 'POST',
-          headers: {
-            ...this.authHeaders(),
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(user),
-        })
-        return result.user
-      } catch (err) {
-        console.error('[ux/auth] Failed to upsert user in DataOps', err)
-      }
-    }
-
-    // Local mode simply returns the provided user
-    if (!user.id) {
-      return { ...user, id: user.email ? deriveStableId(user.email) : randomUUID() }
-    }
-    return user
-  }
-
-  async getAuthProviderCatalog(): Promise<AuthProviderCatalogEntry[]> {
-    if (this.baseUrl) {
-      try {
-        const response = await requestJSON<unknown>(this.makeUrl('/auth/providers/catalog'), {
-          method: 'GET',
-          headers: this.authHeaders(),
-          cache: 'no-store',
-        })
-        const parsed = normaliseCatalogResponse(response)
-        if (parsed.length) {
-          return parsed
-        }
-      } catch (err) {
-        console.error('[ux/auth] Failed to fetch provider catalog from DataOps', err)
-      }
-    }
-
-    if (this.localCatalog) {
-      return this.localCatalog.load()
-    }
-
-    return []
-  }
-}
-
-export const dataOpsClient = new DataOpsClient()
 
 function safeParseCatalog(raw: string): AuthProviderCatalogEntry[] {
   try {
@@ -394,7 +237,7 @@ function parseNestedRecord(value: unknown): { url?: string; params?: Record<stri
   const params = record.params && typeof record.params === 'object'
     ? Object.fromEntries(
         Object.entries(record.params as Record<string, unknown>)
-          .filter(([key, val]) => typeof val === 'string')
+          .filter(([_key, val]) => typeof val === 'string')
           .map(([key, val]) => [key, String(val)]),
       )
     : undefined
@@ -407,3 +250,45 @@ function parseNestedRecord(value: unknown): { url?: string; params?: Record<stri
 function valueToString(input: unknown): string {
   return typeof input === 'string' ? input.trim() : typeof input === 'number' ? String(input) : ''
 }
+
+export class AuthStore {
+  private readonly credentialsStore: CredentialsStore | null
+  private readonly catalogStore: ProviderCatalogStore | null
+
+  constructor() {
+    const credentialsFile = getCredentialsFile()
+    this.credentialsStore = credentialsFile ? new CredentialsStore(credentialsFile) : null
+    const catalogFile = getProviderCatalogFile()
+    this.catalogStore = catalogFile ? new ProviderCatalogStore(catalogFile) : null
+  }
+
+  async verifyCredentials(payload: CredentialsPayload): Promise<VerifyCredentialsResponse> {
+    if (this.credentialsStore) {
+      return this.credentialsStore.verifyCredentials(payload)
+    }
+    return { user: null, reason: 'unconfigured' }
+  }
+
+  async getUserByEmail(email: string): Promise<AuthenticatedUser | null> {
+    if (this.credentialsStore) {
+      return this.credentialsStore.getUserByEmail(email)
+    }
+    return null
+  }
+
+  async getUserById(id: string): Promise<AuthenticatedUser | null> {
+    if (this.credentialsStore) {
+      return this.credentialsStore.getUserById(id)
+    }
+    return null
+  }
+
+  async getAuthProviderCatalog(): Promise<AuthProviderCatalogEntry[]> {
+    if (this.catalogStore) {
+      return this.catalogStore.load()
+    }
+    return []
+  }
+}
+
+export const authStore = new AuthStore()

@@ -21,7 +21,7 @@ export type CredentialsPayload = {
   password: string
 }
 
-export type DataOpsCredentialRecord = {
+export type CredentialRecord = {
   email: string
   password: string
   id?: string

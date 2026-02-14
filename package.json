@@ -13,7 +13,7 @@
     "./server": "./src/server.ts",
     "./env": "./src/env.ts",
     "./types": "./src/types.ts",
-    "./dataops-client": "./src/dataops-client.ts"
+    "./auth-store": "./src/auth-store.ts"
   },
   "peerDependencies": {
     "next": "15.5.4",

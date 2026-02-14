@@ -15,13 +15,10 @@ from ami.core.app import create_app
 from ami.db.base import BaseEntity
 from ami.db.engine import get_session
 
-TEST_TOKEN = "test-internal-token"
-
 
 @pytest.fixture(autouse=True)
 def _set_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set environment variables for test settings."""
-    monkeypatch.setenv("AUTH_DATAOPS_INTERNAL_TOKEN", TEST_TOKEN)
     monkeypatch.setenv("AUTH_ISSUER_URL", "http://localhost:8000")
 
 

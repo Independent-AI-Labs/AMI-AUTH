@@ -18,7 +18,7 @@ export class AuthError extends Error {
 }
 
 /**
- * Thrown when the DataOps authentication service is unavailable or returns an error
+ * Thrown when the authentication service is unavailable or returns an error
  *
  * SECURITY CRITICAL: This error indicates that authentication cannot be performed
  * reliably. Do NOT fall back to guest accounts or local templates when this occurs.

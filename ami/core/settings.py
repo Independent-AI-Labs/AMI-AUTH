@@ -39,7 +39,6 @@ class AuthSettings(BaseSettings):
 
     issuer_url: str = "http://localhost:8000"
     cors_origins: str = ""
-    dataops_internal_token: str = ""
     signing_key_encryption_key: str = ""
     access_token_ttl: int = ACCESS_TOKEN_TTL_DEFAULT
     refresh_token_ttl: int = REFRESH_TOKEN_TTL_DEFAULT
