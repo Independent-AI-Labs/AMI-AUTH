@@ -18,6 +18,25 @@ function deriveDevUserId(email: string): string {
   return `user-${slug}`
 }
 
+const DEV_SIGNOUT_COOKIE = 'ami-dev-signout'
+const DEV_SIGNOUT_SET = `${DEV_SIGNOUT_COOKIE}=1; Path=/; SameSite=Lax`
+const DEV_SIGNOUT_CLEAR = `${DEV_SIGNOUT_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`
+
+function hasSignoutCookie(request: Request): boolean {
+  const cookie = request.headers.get('cookie') || ''
+  return cookie.split(';').some((c) => c.trim().startsWith(`${DEV_SIGNOUT_COOKIE}=1`))
+}
+
+async function isSignedOutFromHeaders(): Promise<boolean> {
+  try {
+    const { cookies } = await import('next/headers')
+    const store = await cookies()
+    return store.get(DEV_SIGNOUT_COOKIE)?.value === '1'
+  } catch {
+    return false
+  }
+}
+
 function createDevAuth(): AuthExports {
   const guestEmail = (process.env.AMI_GUEST_EMAIL || 'guest@ami.local').toLowerCase()
   const guestName = process.env.AMI_GUEST_NAME || 'Guest AMI Account'
@@ -51,31 +70,48 @@ function createDevAuth(): AuthExports {
       },
     })
 
+  const absUrl = (relative: string, base: URL): string => {
+    try {
+      return new URL(relative, base.origin).toString()
+    } catch {
+      return base.origin + '/'
+    }
+  }
+
   const handleGet = async (request: Request) => {
     const url = new URL(request.url)
     const pathname = url.pathname
     if (pathname.endsWith('/session')) {
+      if (hasSignoutCookie(request)) return jsonResponse(null)
       return jsonResponse(devSession)
     }
     if (pathname.endsWith('/csrf')) {
       return jsonResponse({ csrfToken, cookie: csrfToken })
     }
     if (pathname.endsWith('/providers')) {
+      const cb = absUrl(url.searchParams.get('callbackUrl') || '/', url)
       return jsonResponse({
         credentials: {
           id: 'credentials',
           name: 'AMI Credentials',
           type: 'credentials',
           signinUrl: '/auth/signin',
-          callbackUrl: url.searchParams.get('callbackUrl') || '/',
+          callbackUrl: cb,
+        },
+        guest: {
+          id: 'guest',
+          name: 'Guest',
+          type: 'credentials',
+          signinUrl: '/api/auth/signin/guest',
+          callbackUrl: cb,
         },
       })
     }
     if (pathname.includes('/signin')) {
-      return jsonResponse({ url: url.searchParams.get('callbackUrl') || '/' })
+      return jsonResponse({ url: absUrl(url.searchParams.get('callbackUrl') || '/', url) })
     }
     if (pathname.endsWith('/signout')) {
-      return jsonResponse({ url: url.searchParams.get('callbackUrl') || '/' })
+      return jsonResponse({ url: absUrl(url.searchParams.get('callbackUrl') || '/', url) })
     }
     return jsonResponse({ ok: true })
   }
@@ -83,24 +119,38 @@ function createDevAuth(): AuthExports {
   const handlePost = async (request: Request) => {
     const url = new URL(request.url)
     const pathname = url.pathname
+    const resolveCallback = (params: URLSearchParams) =>
+      absUrl(params.get('callbackUrl') || url.searchParams.get('callbackUrl') || '/', url)
     if (pathname.endsWith('/signout')) {
       const body = await request.clone().text().catch(() => '')
-      const params = new URLSearchParams(body)
-      const callbackUrl = params.get('callbackUrl') || url.searchParams.get('callbackUrl') || '/'
-      return jsonResponse({ url: callbackUrl })
+      const callbackUrl = resolveCallback(new URLSearchParams(body))
+      return new Response(JSON.stringify({ url: callbackUrl }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Set-Cookie': DEV_SIGNOUT_SET,
+        },
+      })
     }
-    if (pathname.includes('/signin')) {
+    if (pathname.includes('/signin') || pathname.includes('/callback')) {
       const body = await request.clone().text().catch(() => '')
-      const params = new URLSearchParams(body)
-      const callbackUrl = params.get('callbackUrl') || url.searchParams.get('callbackUrl') || '/'
-      return jsonResponse({ url: callbackUrl, status: 'dev' })
+      const callbackUrl = resolveCallback(new URLSearchParams(body))
+      return new Response(JSON.stringify({ url: callbackUrl }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'Set-Cookie': DEV_SIGNOUT_CLEAR,
+        },
+      })
     }
     return jsonResponse({ ok: true })
   }
 
   const devAuth = (...args: any[]) => {
     if (args.length === 0) {
-      return Promise.resolve(devSession)
+      return isSignedOutFromHeaders().then((out) => (out ? null : devSession))
     }
 
     const [firstArg] = args
@@ -109,8 +159,10 @@ function createDevAuth(): AuthExports {
       const handler = firstArg
       return async (...handlerArgs: any[]) => {
         const [req] = handlerArgs
+        const signedOut = req && typeof req === 'object' ? hasSignoutCookie(req as Request) : false
+        const session = signedOut ? null : devSession
         if (req && typeof req === 'object') {
-          ;(req as any).auth = devSession
+          ;(req as any).auth = session
         }
         return handler(...handlerArgs)
       }
@@ -118,7 +170,8 @@ function createDevAuth(): AuthExports {
 
     const req = firstArg
     if (req && typeof req === 'object') {
-      ;(req as any).auth = devSession
+      const signedOut = hasSignoutCookie(req as Request)
+      ;(req as any).auth = signedOut ? null : devSession
     }
     return Promise.resolve(devSession)
   }
