@@ -1,19 +1,16 @@
 repos:
-  - repo: local
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
     hooks:
       - id: ruff-format
-        name: ruff-format
-        entry: uv run ruff format --config ruff.toml
-        language: system
-        types: [python]
+        args: [ --config, ../../res/config/ruff.toml ]
       - id: ruff
-        name: ruff
-        entry: uv run ruff check --config ruff.toml --fix --exit-non-zero-on-fix
-        language: system
-        types: [python]
+        args: [ --config, ../../res/config/ruff.toml, --fix, --exit-non-zero-on-fix ]
+  - repo: local
+    hooks:
       - id: mypy
         name: mypy
-        entry: uv run python -m mypy --config-file mypy.toml ami
+        entry: uv run mypy --config-file ../../res/config/mypy.toml ami
         language: system
         pass_filenames: false
         files: \.py$
@@ -42,3 +39,11 @@ repos:
         entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_block_coauthored \"$1\"' --"
         language: system
         stages: [commit-msg]
+  - repo: local
+    hooks:
+      - id: verify-coverage
+        name: Verify Test Coverage (Unit >90%, Integration >50%)
+        entry: "bash -c 'source ../AMI-CI/lib/checks.sh && ci_verify_coverage'"
+        language: system
+        stages: [pre-push]
+        pass_filenames: false

@@ -182,7 +182,7 @@ uv run pytest tests/unit/ --cov=ami --cov-report=term-missing
 
 # Lint + type check
 uvx ruff check ami/
-uv run mypy --config-file mypy.toml ami
+uv run mypy --config-file ../../res/config/mypy.toml ami
 
 # Run server
 uv run uvicorn ami.core.app:create_app --factory --port 8000

@@ -11,6 +11,8 @@
 AGENTS_ROOT := $(abspath ../..)
 AGENTS_REPO := git@hf.co:ami-ailabs/AMI-AGENTS
 AGENTS_PYPROJECT := $(AGENTS_ROOT)/pyproject.toml
+AGENTS_RUFF := $(AGENTS_ROOT)/res/config/ruff.toml
+AGENTS_MYPY := $(AGENTS_ROOT)/res/config/mypy.toml
 AGENTS_BOOT := $(AGENTS_ROOT)/.boot-linux
 
 # NEVER fallback to system uv - MUST use workspace-bootstrapped uv
@@ -98,6 +100,16 @@ preflight:
 		fi; \
 		exit 1; \
 	fi
+	@if [ ! -f "$(AGENTS_RUFF)" ]; then \
+		echo "ERROR: Missing $(AGENTS_RUFF)"; \
+		echo "AMI-AGENTS repo appears incomplete. Pull latest and retry."; \
+		exit 1; \
+	fi
+	@if [ ! -f "$(AGENTS_MYPY)" ]; then \
+		echo "ERROR: Missing $(AGENTS_MYPY)"; \
+		echo "AMI-AGENTS repo appears incomplete. Pull latest and retry."; \
+		exit 1; \
+	fi
 	@if [ ! -x "$(UV)" ]; then \
 		echo ""; \
 		echo "ERROR: Workspace uv not found at $(UV)"; \
@@ -147,24 +159,25 @@ install-client: ## Install TypeScript client npm dependencies
 .PHONY: install-hooks
 install-hooks: preflight ## Install pre-commit hooks (requires install-package to have been run)
 	$(UV) run pre-commit install
+	$(UV) run pre-commit install --hook-type pre-push
 
 # =============================================================================
-# Code Quality Targets
+# Code Quality Targets (uses shared configs from ami-agents)
 # =============================================================================
 
 .PHONY: lint
 lint: preflight ## Run ruff linter
-	$(UV) run ruff check --config ruff.toml .
-	$(UV) run ruff format --config ruff.toml --check .
+	$(UV) run ruff check --config $(AGENTS_RUFF) .
+	$(UV) run ruff format --config $(AGENTS_RUFF) --check .
 
 .PHONY: lint-fix
 lint-fix: preflight ## Run ruff with auto-fix
-	$(UV) run ruff check --config ruff.toml --fix .
-	$(UV) run ruff format --config ruff.toml .
+	$(UV) run ruff check --config $(AGENTS_RUFF) --fix .
+	$(UV) run ruff format --config $(AGENTS_RUFF) .
 
 .PHONY: type-check
 type-check: preflight ## Run mypy
-	$(UV) run python -m mypy --config-file mypy.toml ami
+	$(UV) run mypy --config-file $(AGENTS_MYPY) ami
 
 .PHONY: test
 test: preflight ## Run pytest
