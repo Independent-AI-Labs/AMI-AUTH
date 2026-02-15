@@ -4,40 +4,31 @@ Unified authentication for the AMI platform. A Python OIDC Identity Provider bac
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│  TypeScript Client  (src/)                              │
-│  NextAuth.js adapter, middleware, DataOps bridge        │
-│                                                         │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐ │
-│  │ config   │  │ middleware   │  │ dataops-client    │ │
-│  │ server   │  │ client      │  │ security-logger   │ │
-│  └──────────┘  └──────────────┘  └───────────────────┘ │
-│         │               │                  │            │
-└─────────┼───────────────┼──────────────────┼────────────┘
-          │               │                  │
-          ▼               ▼                  ▼
-┌─────────────────────────────────────────────────────────┐
-│  Python Backend  (ami/)                                 │
-│  FastAPI OIDC Provider + DataOps API                    │
-│                                                         │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────────┐ │
-│  │ api/     │  │ oidc/        │  │ crypto/           │ │
-│  │ DataOps  │  │ OIDC routes  │  │ JWT, RSA, Fernet  │ │
-│  └──────────┘  └──────────────┘  └───────────────────┘ │
-│         │               │                  │            │
-│         └───────────────┴──────────────────┘            │
-│                         │                               │
-│  ┌──────────────────────▼──────────────────────────────┐│
-│  │  db/  SQLAlchemy + PostgreSQL (asyncpg)             ││
-│  │  users, oauth_clients, auth_codes, tokens, keys     ││
-│  └─────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph ts["TypeScript Client (src/)"]
+        config["config.ts<br/>NextAuth providers"]
+        server["server.ts<br/>NextAuth init"]
+        mw["middleware.ts<br/>Route protection"]
+        client["client.ts<br/>Fetch wrapper"]
+        store["auth-store.ts<br/>Local credentials &amp; catalog"]
+        providers["providers.ts<br/>OAuth provider builders"]
+    end
+
+    subgraph py["Python Backend (ami/)"]
+        oidc["oidc/<br/>OIDC routes"]
+        crypto["crypto/<br/>JWT, RSA, Argon2id"]
+        db["db/<br/>SQLAlchemy + asyncpg"]
+    end
+
+    config --> store
+    config --> providers
+    server --> config
+    oidc --> crypto
+    oidc --> db
 ```
 
 ## Endpoints
-
-### OIDC (public)
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -48,27 +39,18 @@ Unified authentication for the AMI platform. A Python OIDC Identity Provider bac
 | GET | `/oauth/userinfo` | Authenticated user claims |
 | POST | `/oauth/revoke` | Revoke access or refresh token |
 
-### DataOps API (internal, Bearer token)
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| POST | `/auth/verify` | Verify email + password credentials |
-| GET | `/auth/users/by-email?email=` | Lookup user by email |
-| GET | `/auth/users/{id}` | Lookup user by ID |
-| POST | `/auth/users` | Create or update user record |
-| GET | `/auth/providers/catalog` | OAuth provider configuration |
-
 ## TypeScript Client
 
-The `src/` directory is a NextAuth.js integration layer consumed by AMI UI surfaces (CMS, browser extension, future panels).
+The `src/` directory is a NextAuth.js integration layer consumed by AMI UI surfaces.
 
 | Module | Purpose |
 |--------|---------|
-| `config.ts` | Assembles NextAuth providers from DataOps catalog, env vars, or local files |
+| `config.ts` | Assembles NextAuth providers from catalog files, env vars, or local credentials |
 | `server.ts` | NextAuth initialization with dev-mode fallback |
 | `middleware.ts` | Route protection, HTTPS redirect, user header forwarding |
 | `client.ts` | Authenticated fetch wrapper with 401 handling |
-| `dataops-client.ts` | Bridge to the Python backend (verify, lookup, upsert, catalog) |
+| `auth-store.ts` | Local credentials store and provider catalog reader |
+| `providers.ts` | OAuth provider builders and env-based provider detection |
 | `security-logger.ts` | Structured security event logging with field sanitization |
 | `types.ts` | Shared type definitions (`AuthenticatedUser`, `SecurityContext`, etc.) |
 | `env.ts` | Environment variable loading and validation |
@@ -83,10 +65,6 @@ ami/
   core/
     app.py            FastAPI factory, CORS, router wiring
     settings.py       DatabaseSettings, AuthSettings (env-driven)
-  api/
-    deps.py           Internal token auth dependency
-    schemas.py        Pydantic request/response models (camelCase aliases)
-    router_dataops.py 5 DataOps endpoints
   crypto/
     password.py       Argon2id hashing
     keys.py           RSA-2048 generation, Fernet encrypt/decrypt, PEM-to-JWK
@@ -131,7 +109,6 @@ ami/
 - **SHA-256** token hashes in database (raw tokens never stored)
 - **Refresh token rotation** -- old tokens revoked on use, replay returns None
 - **Single-use authorization codes** with 60s TTL
-- **Internal Bearer token** gate on all DataOps endpoints
 
 ## Environment Variables
 
@@ -141,7 +118,6 @@ ami/
 |----------|---------|---------|
 | `AUTH_ISSUER_URL` | `http://localhost:8000` | OIDC issuer identifier, base for all endpoint URLs |
 | `AUTH_CORS_ORIGINS` | `""` | Comma-separated allowed origins |
-| `AUTH_DATAOPS_INTERNAL_TOKEN` | `""` | Bearer token for DataOps API authentication |
 | `AUTH_SIGNING_KEY_ENCRYPTION_KEY` | `""` | Fernet key for RSA private key encryption |
 | `AUTH_ACCESS_TOKEN_TTL` | `3600` | Access token lifetime (seconds) |
 | `AUTH_REFRESH_TOKEN_TTL` | `2592000` | Refresh token lifetime (30 days) |
@@ -158,10 +134,8 @@ ami/
 |----------|---------|
 | `AUTH_SECRET` | NextAuth JWT encryption secret (min 32 chars) |
 | `AUTH_TRUST_HOST` | Trust reverse proxy (`true`/`false`) |
-| `DATAOPS_AUTH_URL` | Python backend URL for remote auth |
-| `DATAOPS_INTERNAL_TOKEN` | Bearer token for Python backend |
-| `AUTH_CREDENTIALS_FILE` | Local JSON credentials for offline dev |
-| `AUTH_ALLOWED_EMAILS` | Comma-separated email allow list (local mode) |
+| `AUTH_CREDENTIALS_FILE` | Local JSON credentials file path |
+| `AUTH_ALLOWED_EMAILS` | Comma-separated email allow list |
 | `AUTH_PROVIDER_CATALOG_FILE` | Local JSON OAuth provider catalog |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Direct Google OAuth (no catalog needed) |
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Direct GitHub OAuth |
@@ -172,7 +146,7 @@ ami/
 ### Backend
 
 ```bash
-uv sync --extra dev
+uv sync
 
 # Run tests
 uv run pytest tests/ -v
@@ -181,8 +155,8 @@ uv run pytest tests/ -v
 uv run pytest tests/unit/ --cov=ami --cov-report=term-missing
 
 # Lint + type check
-uvx ruff check ami/
-uv run mypy --config-file ../../res/config/mypy.toml ami
+uv run ruff check ami/
+uv run python -m mypy --config-file ../../res/config/mypy.toml ami
 
 # Run server
 uv run uvicorn ami.core.app:create_app --factory --port 8000
@@ -207,6 +181,5 @@ npx tsc --noEmit
 
 ## Test Coverage
 
-- 113 unit tests, 97% line coverage
-- 3 integration tests (full OIDC flow)
-- In-memory SQLite for unit tests, no external dependencies
+- 104 tests (unit + integration), in-memory SQLite, no external dependencies
+- Integration suite covers full OIDC flow: authorize, token exchange, userinfo, refresh, revoke
